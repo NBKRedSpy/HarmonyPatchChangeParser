@@ -11,20 +11,23 @@ This utility assumes that the user has the source code of the target game in a g
 
 use `.\HarmonyPatchChangeParser.exe --help` to get the list of parameters.  See the [Help](#help-output) section below.
 
-Example:
+Example command line:
 `.\HarmonyPatchChangeParser.exe -a "HEAD~4" -b "HEAD" -s C:\SRC\Decompiled\Quasimorph\ -m C:\src\Quasimorph` 
 
-The user provides the tree-ish git commits to get the change list from, the directory that the game's source is in, and the folder that contains the mod or mods.
+See the [Example Output](#example-output-formatted) section.
 
-Quasimorph Specific Logic:  This mod only includes types that are in the MGSC namespace, which is where Quasimorph classes are located.
+## Usage
 
+The user runs the HarmonyPatchChangeParser.exe in a terminal, providing the tree-ish git commits to get the change list from, the directory that the game's source is in, and the folder that contains the mod or mods.
+
+Quasimorph Specific Logic:  This utility currently only includes types that are in the MGSC namespace, which is where Quasimorph classes are located.
 
 The utility will then output GameFileChanges.tsv and a HarmonyReport.tsv.  
 
-GameFileChanges.tsv is somewhat the list of the files/types that were changed.  
+GameFileChanges.tsv is the list of the types that were changed.  
 The mod assumes that all the files in the MGSC source folder are types.  
 
-The HarmonyReport.tsv joins any mod's Harmony lines to the "types" that were change in the game's git commits.  A line is included in the report if it had the word `Harmony`, a `HarmonyPatch(typeof(Foo)...`, and/or a `HarmonyMethod(typeof(Foo)...`.
+The HarmonyReport.tsv joins any mod's Harmony lines to the "types" that were changed in the game's git commits.  A line is included in the report if it had the word `Harmony`, a `HarmonyPatch(typeof(Foo)...`, and/or a `HarmonyMethod(typeof(Foo)...`.
 
 It also optionally includes any lines that included the text "copy".  I currently use that as a convention to indicate functions that are a copy and replace or copies logic from another game's function.
 
