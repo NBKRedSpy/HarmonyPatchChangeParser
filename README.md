@@ -4,10 +4,7 @@ This doc will be a bit rough as I am unsure if anyone else will find this utilit
 
 A command line utility that creates a report that matches changes in a game's git repo to Harmony patches in mods.
 
-This is a personal utility to map git changes of a project to mods that use Harmony Patches.
-
 Currently it has some logic that is specific to the Quasimorph game, but I could update it if someone is interested.
-
 
 # Operation
 This utility assumes that the user has the source code of the target game in a git repository.
