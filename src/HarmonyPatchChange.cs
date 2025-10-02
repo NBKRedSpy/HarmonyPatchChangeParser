@@ -8,7 +8,8 @@ using System.Threading.Tasks;
 namespace HarmonyPatchChangeParser
 {
     /// <summary>
-    /// Indicates a single patch in a file.
+    /// Represents a single harmony patch change entry
+    /// Used for the final report.
     /// </summary>
     internal class HarmonyPatchChange
     {

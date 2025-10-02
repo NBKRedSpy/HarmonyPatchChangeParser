@@ -1,61 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
-using SD = System.Diagnostics;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Text.RegularExpressions;
-using System.Security.Principal;
-using CsvHelper;
+﻿using CsvHelper;
 using CsvHelper.Configuration;
-using System.Xml;
+using ParseDiff;
+using System.Text.RegularExpressions;
 
 namespace HarmonyPatchChangeParser
 {
+    /// <summary>
+    /// A simple processor that uses text searches to match mod lines with "HarmonyPatch" 
+    /// to git changes for a game.
+    /// </summary>
     internal class HarmonySourceProcessor
     {
-        private List<string> GetGitFilenameChanges(string gameSourcePath, string gitExePath, string commitA, string commitB)
-        {
 
-            //TODO: .exe is windows specific.
-            string exeFile = Path.Join(gitExePath, "git.exe");
-
-
-            ProcessStartInfo startInfo = new ProcessStartInfo
-            {
-                FileName = exeFile,
-                Arguments = $"-P diff \"{commitA}\" \"{commitB}\" --name-only",
-                WorkingDirectory = gameSourcePath,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            Process process = new Process();
-            process.StartInfo = startInfo;
-
-            process.Start();
-            //process.BeginOutputReadLine();
-            string output = process.StandardOutput.ReadToEnd();
-            string errors = process.StandardError.ReadToEnd();
-
-            process.WaitForExit();
-
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException($"Git process failed with exit code {process.ExitCode}.\nOutput: {errors}");
-            }
-
-            //Adding a distinct just in case, but they should be unique.
-            List<string> changedFiles = Regex.Split(output, "\r?\n") .Distinct()
-                .Order()
-                .ToList();
-
-            changedFiles.Remove("");    //The git output is adding a ""
-            return changedFiles;
-        }
 
         /// <summary>
         /// Processes all of the mods' patches and compares them to the git changes.
@@ -63,45 +19,116 @@ namespace HarmonyPatchChangeParser
         /// <param name="args">The settings</param>
         /// 
         /// <returns>The HarmonyPatchChanges in tab separated format </returns>
-        /// <param name="gameFileChanges">The list of file files that have changed in the game's git diff.</param>
-        public string Process(CommandLineOptions args,out string gameFileChanges)
+        /// <param name="gameFileChanges">The output of the game's file changes.
+        /// This is identical to 'git diff --name-only'</param>
+        public string Process(CommandLineOptions args, out string gameFileChanges)
         {
-            List<HarmonyPatchChange> harmonyPatchChanges = GetModPatches(args.GameSourcePath, args.GitPath, args.GitCommitA, args.GitCommitB, args.HarmonyModsPath, out HashSet<string> gameGitChanges);
 
-            CsvConfiguration config = new CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture)
+            //---- Create git changes file name lookup
+            // Git file changes with the MGSC/ prefix removed, and the .cs suffix removed.  This is a crude convention
+            //  to match the class name to the mod harmony patches.  
+
+            // Lookup of file names that have changed.
+            List<string> fileChanges = GetGitFilenameChanges(args.GameSourcePath, args.GitPath, args.GitCommitA, args.GitCommitB);
+            gameFileChanges = string.Join("\n", fileChanges);
+
+
+            Regex mgscRegex = new ("^MGSC/");
+            Regex csExtensionRegex = new(@"\.cs$");
+
+            // TODO: Expecting a MGSC prefix is quasimorph specific. Leaving for now since that is what this tool is for.
+            // HACK: assumes there are no sub directories in the MGSC directory.
+            HashSet<string> gameGitChanges = fileChanges
+                .Where(x => x.StartsWith("MGSC/"))
+                .Select(x =>
+                {
+                    string result;
+                    result = mgscRegex.Replace(x, "");
+                    result = mgscRegex.Replace(result, "");
+                    return result;
+                })
+                .ToHashSet();
+
+            List<HarmonyPatchChange> harmonyPatchMatches = new();  //Contains the patches from all sources.
+
+            //---- "Harmony" text based matches
+            if (args.IncludeHarmonyTextMatches ?? true)
             {
-                Delimiter = "\t",
-                HasHeaderRecord = true,
-            };
+                //Get the list of mod patches that contain the text "HarmonyPatch".  Joined with the game's files that have changed.
+                //  This is primarily a legacy match, but it can still find some patches that the C# parser misses.
+                List<HarmonyPatchChange> modPatches = GetHarmonyPatches(args.HarmonyModsPath);
 
-            gameFileChanges = string.Join("\n", gameGitChanges);
+                modPatches.ForEach(patch =>
+                {
+                    patch.ChangeType = gameGitChanges.Contains(patch.PatchObjectType) ? ChangeType.HarmonyPatchTextMatchChange : ChangeType.None;
+                });
 
-            // Output the copy warning lines
-            //Looping through the files again, but not a big deal.
+                harmonyPatchMatches.AddRange(modPatches);
 
-            if (args.IncludeCopyWarnings)
-            {
-                List<HarmonyPatchChange> copyWarningLines = CopyWarningLines(args.HarmonyModsPath, gameGitChanges);
-                harmonyPatchChanges.AddRange(copyWarningLines);
 
             }
 
+            //--- Changes using the C# Parser
+            // Uses a C# parser to get the HarmonyPatch attributes and match them to the game's changes.
+            // This is more accurate than the text match above.
+            List<HarmonyPatchInfo> patchCodeParseChanges = new GameChangeCodeProcessor().ProcessChanges(args.GameSourcePath, args.HarmonyModsPath, args.GitPath,
+                args.GitCommitA, args.GitCommitB);
+
+            harmonyPatchMatches.AddRange(
+                patchCodeParseChanges.Select(x => new HarmonyPatchChange
+                {
+                    ChangeType = ChangeType.HarmonyPatchParsedMatch,
+                    FileName = x.FilePath,
+                    HarmonyPatchLine = x.AttributeText,
+                    PatchObjectType = x.FullTargetName
+                }
+                ));
+
+            //--- Copy warnings
+            if (args.IncludeCopyWarnings ?? true)
+            {
+                // Add any lines which have the word "copy" in them, and the the game's file has changed.
+                // This is a convention where the mod code will use the word "copy" to indicate a full copy and replace of a function.
+                //  For example:  "//COPY: This is a full copy and replace of the Foo.Bar method."
+
+                List<HarmonyPatchChange> copyWarningLines = CopyWarningLines(args.HarmonyModsPath, gameGitChanges);
+                harmonyPatchMatches.AddRange(copyWarningLines);
+            }
+
+            //---- Create the report
+            string harmonyPatchReportTsv = CreateCsvReport(harmonyPatchMatches);
+
+            return harmonyPatchReportTsv;
+        }
+
+        /// <summary>
+        /// Writes the CSV report
+        /// </summary>
+        /// <param name="harmonyPatchTextMatchChanges"></param>
+        /// <returns></returns>
+        private static string CreateCsvReport(List<HarmonyPatchChange> harmonyPatchTextMatchChanges)
+        {
             string harmonyPatchReportTsv = "";
 
-            //Avoids needing to create a CsvHelper map since oddly,
-            //  CSV Helper does use CsvHelper Index attribute for writing.
-            var columnOrderedPatches = harmonyPatchChanges
+            //Avoids the need to create a CsvHelper map; note that CsvHelper does not use the CsvHelper Index attribute for writing.
+            var columnOrderedPatches = harmonyPatchTextMatchChanges
                 .Select(x => new
                 {
                     x.ChangeType,
                     x.PatchObjectType,
                     x.FileName,
-                    x.HarmonyPatchLine,
+                    HarmonyPatchLine = x.HarmonyPatchLine.ReplaceLineEndings(" "),
                 })
                 .OrderBy(x => x.FileName)
-                .ThenBy(x => x.PatchObjectType)
-                .ThenBy(x => x.ChangeType.SortOrder());
+                .ThenBy(x => x.ChangeType)
+                .ThenBy(x => x.PatchObjectType);
 
+            CsvConfiguration config = new CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture)
+            {
+                Delimiter = "\t",
+                HasHeaderRecord = true,
+                ShouldQuote = x => true,
+            };
 
             using (var writer = new StringWriter())
             using (var csv = new CsvWriter(writer, config))
@@ -111,8 +138,48 @@ namespace HarmonyPatchChangeParser
             }
 
             return harmonyPatchReportTsv;
-
         }
+
+        /// <summary>
+        /// Returns the git diff between the two commits as a list of FileDiff objects.
+        /// Uses a unified context of 0 to minimize the amount of data returned.
+        /// </summary>
+        /// <param name="gameSourcePath"></param>
+        /// <param name="gitExePath"></param>
+        /// <param name="commitA"></param>
+        /// <param name="commitB"></param>
+        /// <returns></returns>
+        private List<FileDiff> GetGameMethodChanges(string gameSourcePath, string gitExePath, string commitA, string commitB)
+        {
+            string patchText = Utils.ExecuteGitCommand(gameSourcePath, gitExePath, commitA, commitB, "--unified=0");
+
+
+            return Diff.Parse(patchText).ToList();
+        }
+
+
+        /// <summary>
+        /// Gets the list of filenames that have changed between the two commits.
+        /// </summary>
+        /// <param name="gameSourcePath"></param>
+        /// <param name="gitExePath"></param>
+        /// <param name="commitA"></param>
+        /// <param name="commitB"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        private List<string> GetGitFilenameChanges(string gameSourcePath, string gitExePath, string commitA, string commitB)
+        {
+            string output = Utils.ExecuteGitCommand(gameSourcePath, gitExePath, commitA, commitB, "--name-only");
+
+            //Adding a distinct just in case, but they should be unique.
+            List<string> changedFiles = Regex.Split(output, "\r?\n").Distinct()
+                .Order()
+                .ToList();
+
+            changedFiles.Remove("");    //The git output is adding a ""
+            return changedFiles;
+        }
+
 
 
         /// <summary>
@@ -160,45 +227,10 @@ namespace HarmonyPatchChangeParser
             return copyPatches;
         }
 
-        private  List<HarmonyPatchChange> GetModPatches(
-            string gameSourcePath,
-            string gitPath,
-            string gitCommitA,
-            string gitCommitB,
-            string harmonyModsPath,
-            out HashSet<string> gameGitChanges
-        )
-        {
-            // Lookup of file names that have changed.
-            List<string> fileChanges = GetGitFilenameChanges(gameSourcePath, gitPath, gitCommitA, gitCommitB);
-
-            // TODO: this is quasimorph specific. Leaving for now since that is what this tool is for.
-            // HACK: assumes there are no sub directories in the MGSC directory.
-            gameGitChanges = fileChanges.Where(x => x.StartsWith("MGSC/"))
-                .Select(x =>
-                {
-                    string result;
-                    result = Regex.Replace(x, "^MGSC/", "");
-                    result = Regex.Replace(result, @"\.cs$", "");
-                    return result;
-                })
-                .ToHashSet();
-
-            List<HarmonyPatchChange> modPatches = GetHarmonyPatches(harmonyModsPath);
-
-            // Join the patches to the git changes
-            HashSet<string> tempGitChanges = gameGitChanges;
-
-            modPatches.ForEach(patch =>
-            {
-                patch.ChangeType = tempGitChanges.Contains(patch.PatchObjectType) ? ChangeType.HarmonyPatchChange : ChangeType.None;
-            });
-
-
-            return modPatches;
-        }
+        
 
       
+
         /// <summary>
         /// Returns the Patch information for each file.
         /// </summary>

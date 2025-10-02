@@ -2,7 +2,7 @@
   "profiles": {
     "HarmonyPatchChangeParser": {
       "commandName": "Project",
-      "commandLineArgs": "-s C:\\src\\Decompiled\\Quasimorph -m C:\\src\\Quasimorph -h c:\\work\\Patches.txt  -f c:\\work\\GitChanges.txt -a 5d1d14039c46d318d8a61276d2dd86501d1c13a0 -b HEAD"
+      "commandLineArgs": "-s C:\\src\\Decompiled\\Quasimorph -m C:\\src\\Quasimorph -h c:\\work\\Patches.txt -f c:\\work\\GitChanges.txt -a f69b3a6ce8952f0fda4ff1eff33c9236742a4092 -b 758d321e0c2bd0fdcee9502092c3a8788c25a1bb"
     }
   }
 }

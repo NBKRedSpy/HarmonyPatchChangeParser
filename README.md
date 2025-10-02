@@ -1,7 +1,5 @@
 # Harmony Patch Change Parser
 
-This doc will be a bit rough as I am unsure if anyone else will find this utility useful.
-
 A command line utility that creates a report that matches changes in a game's git repo to Harmony patches in mods.
 
 Currently it has some logic that is specific to the Quasimorph game, but I could update it if someone is interested.
@@ -47,17 +45,19 @@ Example: `//COPY: This is a partial copy of the Foo.Bar logic`.
 |------------------|---------------|------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
 |None              |CorpseStorage  |C:\src\Quasimorph\ChangeExploredColor\src\CorpseStorage_Patch.cs                    |[HarmonyPatch(typeof(CorpseStorage), nameof(CorpseStorage.Highlight))]             |
 |CopyWarning       |               |C:\src\Quasimorph\ChangeExploredColor\src\Creature3dView_HighlightAsCorpse__Patch.cs|//--- This is a copy of the original function, just with the new color property id.|
-|HarmonyPatchChange|Creature3dView |C:\src\Quasimorph\ChangeExploredColor\src\Creature3dView_HighlightAsCorpse__Patch.cs|[HarmonyPatch(typeof(Creature3dView), nameof(Creature3dView.HighlightAsCorpse))]   |
-|None              |ItemOnFloor    |C:\src\Quasimorph\ChangeExploredColor\src\ItemOnFloorHighlightPatch.cs              |[HarmonyPatch(typeof(ItemOnFloor), nameof(ItemOnFloor.Highlight))]                 |
+|HarmonyPatchTextMatchChange|Creature3dView |C:\src\Quasimorph\ChangeExploredColor\src\Creature3dView_HighlightAsCorpse__Patch.cs|[HarmonyPatch(typeof(Creature3dView), nameof(Creature3dView.HighlightAsCorpse))]   |
+|HarmonyPatchParsedMatch|CorpseInspectWindow.Configure|C:\src\Quasimorph\AugmentIndicator\src\CorpseInspectWindow_Configure__Patch.cs|HarmonyPatch(typeof(CorpseInspectWindow), nameof(CorpseInspectWindow.Configure))|
+
+
 
 
 ## ChangeType
 |Value|Description|
 |--|--|
-|HarmonyPatchChange| HarmonyPatch or HarmonyMethod had a typeof() that was changed in the git commits|
-|CopyWarning| Found the text 'copy' in the line|
+|HarmonyPatchTextMatchChange| HarmonyPatch or HarmonyMethod had a typeof() that was changed in the git commits|
+|HarmonyPatchParsedMatch|A more detailed change detection which uses a C# parser to map game changes to mod HarmonyPatch attribute classes.|
+|CopyWarning| Found the text 'copy' in the line.  This supports the convention of "// WARNING COPY: This is a full copy of Foo.Bar"|
 |None|Found the text Harmony but did not include a typeof(), or the typeof() type had no git changes.|
-
 
 
 # Help Output
@@ -65,40 +65,45 @@ Example: `//COPY: This is a partial copy of the Foo.Bar logic`.
 The output from the --help option:
 
 ```
-HarmonyPatchChangeParser 1.0.0+93ad0351c3525b278765c46bc999377a8ffadff1
+HarmonyPatchChangeParser 2.0.0+4cb61d6e0d601457c06384cb07269f138635ffd4
 Copyright (C) 2025 HarmonyPatchChangeParser
 
-  -a, --git-commit-a             Required. The first Git commit hash or
-                                 reference.
+  -a, --git-commit-a                    Required. The first Git commit hash or
+                                        reference.
 
-  -b, --git-commit-b             Required. The second Git commit hash or
-                                 reference.
+  -b, --git-commit-b                    Required. The second Git commit hash or
+                                        reference.
 
-  -s, --game-source-path         Required. Path to the game source directory.
+  -s, --game-source-path                Required. Path to the game source
+                                        directory.
 
-  -m, --harmony-mods-path        Required. Path to the Harmony mods directory.
+  -m, --harmony-mods-path               Required. Path to the Harmony mods
+                                        directory.
 
-  -h, --harmony-output-file      (Default: HarmonyReport.tsv) The path to the
-                                 output file for the harmony patches report.
-                                 Use - to output to the console.  Use '' to not
-                                 export.
+  -h, --harmony-output-file             (Default: HarmonyReport.tsv) The path to
+                                        the output file for the harmony patches
+                                        report.  Use - to output to the console.
+                                        Use '' to not export.
 
-  -f, --game-file-changes        (Default: GameFileChanges.tsv) The path to
-                                 output the files that were changed in the git
-                                 commits. Use - to output to the console.  Use
-                                 '' to not export.
+  -f, --game-file-changes               (Default: GameFileChanges.tsv) The path
+                                        to output the files that were changed in
+                                        the git commits. Use - to output to the
+                                        console.  Use '' to not export.
 
-  -c, --include-copy-warnings    (Default: true) If set, will include any lines
-                                 which contain the text 'copy' to try to find
-                                 any copy and replace patches.  The word 'copy'
-                                 is by convention.
+  -c, --include-copy-warnings           (Default: true) If set, will include any
+                                        lines which contain the text 'copy' to
+                                        try to find any copy and replace
+                                        patches.  The word 'copy' is by
+                                        convention.
 
-  -g, --git path                 (Default: ) The path to the git executable. Use
-                                 '' to require git to be in the path.
+  -t, --include-harmony-text-matches    Includes the simple 'Harmony' text match
+                                        in the file changes
 
-  --help                         Display this help screen.
+  -g, --git-path                        (Default: ) The path to the git
+                                        executable. Use '' to require git to be
+                                        in the path.
 
-  --version                      Display version information.
+  --help                                Display this help screen.
 
-
+  --version                             Display version information.
 ```

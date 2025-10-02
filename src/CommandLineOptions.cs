@@ -30,9 +30,12 @@ namespace HarmonyPatchChangeParser
 
         [Option('c', "include-copy-warnings", Required = false, HelpText = "If set, will include any lines which contain the text 'copy' to " +
             "try to find any copy and replace patches.  The word 'copy' is by convention.", Default = true)]
-        public bool IncludeCopyWarnings { get; set; } = true;
+        public bool? IncludeCopyWarnings { get; set; } = true;
 
-        [Option('g', "git path", Required = false, HelpText = "The path to the git executable. Use '' to require git to be in the path.", Default = "")]
+        [Option('t', "include-harmony-text-matches",Required = false, HelpText = "Includes the simple 'Harmony' text match in the file changes")]
+        public bool? IncludeHarmonyTextMatches { get; set; }
+
+        [Option('g', "git-path", Required = false, HelpText = "The path to the git executable. Use '' to require git to be in the path.", Default = "")]
         public string GitPath { get; set; } = "";
     }
 }
