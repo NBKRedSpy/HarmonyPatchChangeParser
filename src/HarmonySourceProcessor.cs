@@ -44,7 +44,7 @@ namespace HarmonyPatchChangeParser
                 {
                     string result;
                     result = mgscRegex.Replace(x, "");
-                    result = mgscRegex.Replace(result, "");
+                    result = csExtensionRegex.Replace(result, "");
                     return result;
                 })
                 .ToHashSet();
